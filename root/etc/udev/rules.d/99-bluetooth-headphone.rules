@@ -1,0 +1,2 @@
+ACTION=="add", ENV{DEVPATH}=="/devices/pci0000:00/0000:00:14.0/usb3/3-5/3-5:1.0/bluetooth/hci0/hci0:256", RUN+="/bin/su <USER> -c '/home/<USER>/bin/sound-switch.sh headphones'"
+ACTION=="remove", ENV{DEVPATH}=="/devices/pci0000:00/0000:00:14.0/usb3/3-5/3-5:1.0/bluetooth/hci0/hci0:256", RUN+="/bin/su <USER> -c '/home/<USER>/bin/sound-switch.sh soundbar'"
