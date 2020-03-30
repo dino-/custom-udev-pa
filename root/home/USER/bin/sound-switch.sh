@@ -1,16 +1,19 @@
 #! /bin/bash
 
 
-# Set these to the sinks specific to your system
+# Set these to the sinks specific to your system. To get them, use the
+# `list-sinks-brief.sh` script in this project or `pactl list sinks | grep -e
+# 'Sink ' -e 'Name' -e 'Mute'
 
-# This the "main" sound device
+# This is the headphones sound sink
+headphonesSinkName="bluez_sink.D0_8A_55_A9_58_12.a2dp_sink"
+
+# This is the speakers sound sink
 hdmiSinkName="alsa_output.pci-0000_01_00.1.hdmi-surround"
 
 # On my system, this is present too but we never want it to make any noise! I
-# think it's the Intel onboard audio.
+# think it's the Intel onboard audio. It's here so we can specifically mute it.
 stereoSinkName="alsa_output.pci-0000_00_1b.0.iec958-stereo"
-
-headphoneSinkName="bluez_sink.D0_8A_55_A9_58_12.a2dp_sink"
 
 
 basename=$(basename "$0")
@@ -25,7 +28,7 @@ usage:
 options:
   -h, --help  This help information
 
-Valid PROFILE values are: headphones | soundbar
+Valid PROFILE values are: headphones | speakers
 
 v1.0  2020-03-22  Dino Morelli <dino@ui3.info>
 
@@ -75,9 +78,9 @@ case "$muteValue" in
    headphones)
       pactl set-sink-mute "$hdmiSinkName" 1
       pactl set-sink-mute "$stereoSinkName" 1
-      pactl set-default-sink "$headphoneSinkName"
+      pactl set-default-sink "$headphonesSinkName"
       ;;
-   soundbar)
+   speakers)
       pactl set-sink-mute "$hdmiSinkName" 0
       pactl set-sink-mute "$stereoSinkName" 1
       pactl set-default-sink "$hdmiSinkName"

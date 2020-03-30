@@ -22,24 +22,14 @@ work.
 
 ## Installation
 
-FIXME `bin` scripts somewhere on the path, preferably `<USER>/bin`
+There are two parts to this: 1) Creating udev rules to perform actions in response to bluetooth add/remove events for the headphone. 2) Configuring pulse audio for the user and the script for switching audio.
 
-FIXME `.config/pulse/default.pa`
+### 1) Creating udev rules for the bluetooth headphone
 
-FIXME Write an installation script? Pretty non-destructive, only adds one
-"risky" file to `/etc/udev/rules.d`
-
-### Creating udev rules
-
-keywords: udev rules
-
-This info is specifically about trying to figure out a bluetooth headphone's
-add/remove events as it's connected and disconnected.
-
-Use `udevadm` to figure out what your devices is
+Use `udevadm` to figure out what your device is
 
     # udevadm monitor -p
-    # udevadm monitor -p -s bluetooth  # Limit to bluetooth subsystem, may be desireable?
+    # udevadm monitor -p -s bluetooth  # Limit to the bluetooth subsystem
 
 Connect your device and look for paths starting with `/devices/...` like this
 
@@ -58,19 +48,25 @@ You can then use that path to query info about that hardware if needed
     E: TAGS=:systemd:
     E: USEC_INITIALIZED=442328156407
 
-FIXME This files exists in this project:
+Copy the file in this project in `root/etc/udev/rules.d/99-my-device.rules` to
+your system at `/etc/udev/rules.d/`
 
-To create rules, make a file like `/etc/udev/rules.d/99-my-device.rules`. It's
-usually good to use a high number so other rules will get a crack first.
+For `<device>` use the bluetooth device we discovered above. For `<user>` use
+the user who will be logged into X and will be using the sound hardware.
 
-    99-my-device.rules
+Here's a copy of what's in that file:
+
+    root/etc/udev/rules.d/99-my-device.rules
     ---
-    ACTION=="add", ENV{DEVPATH}=="/devices/pci0000:00/0000:00:14.0/usb3/3-5/3-5:1.0/bluetooth/hci0/hci0:256", RUN+="/bin/su <SOMEUSER> -c '/home/<SOMEUSER>/bin/<SOMESCRIPT> <ARG1>...'"
-    ACTION=="remove", ENV{DEVPATH}=="/devices/pci0000:00/0000:00:14.0/usb3/3-5/3-5:1.0/bluetooth/hci0/hci0:256", RUN+="/bin/su <SOMEUSER> -c '/home/<SOMEUSER>/bin/<SOMESCRIPT> <ARG1>...'"
+    ACTION=="add", ENV{DEVPATH}=="<device>", RUN+="/bin/su <user> -c '/home/<user>/bin/sound-switch.sh headphones'"
+    ACTION=="remove", ENV{DEVPATH}=="<device>", RUN+="/bin/su <user> -c '/home/<user>/bin/sound-switch.sh speakers'"
     ---
 
-Should be no need to restart the udev service but this may be necessary after
-any changes:
+Note: It's usually good to use a high number in the name of this file so other
+rules will get a crack at running first.
+
+There should be no need to restart the udev service but this may be necessary
+after any changes:
 
     # udevadm control --reload-rules
 
@@ -78,25 +74,34 @@ I had notes showing `# udevadm trigger` too after the `control --reload-rules`
 but I'm not sure this was useful
 
 Once you have added or made changes to the `.rules` file, test to see if your
-script is being run
+script would be run
 
     # udevadm test "/devices/pci0000:00/0000:00:14.0/usb3/3-5/3-5:1.0/bluetooth/hci0/hci0:256"
 
-And look for lines starting with `run: ` which should show your script being
-invoked if there are matches.
+In the output look for lines starting with `run: ` which means your script would be invoked.
 
-### pulse audio
+### Configuring pulse audio for the user and the script for switching audio
 
-keywords: sound pulse audio pulseaudio pa
+#### Discover pulseaudio sinks
+
+Use the script in this project `root/home/USER/bin/list-sinks-brief.sh` to see
+the pulseaudio sinks your user has available. We'll use these in the next steps
+to configure pulseaudio and the switch script.
 
 We'll need to get the device "Name" values for the sinks that pulseaudio has
-for your user. These will be used to script things with `pactl`
+available for your user.
+
+This command will get those for you
 
     $ pactl list sinks | grep -e "Sink " -e "Name" -e "Mute"
 
-This output could be monitored for connection and mute status with watch
+This command is also available in a convenience script in this project
 
-    $ watch 'pactl list sinks | grep -e "Sink " -e "Name" -e "Mute"'
+    $ ./bin/list-sinks-brief.sh
+
+#### Configure pulseaudio
+
+On Ubuntu, the default configuration for pulseaudio was fighting me when devices were connected and programs were being run. To take back control of some of this it was necessary to make a custom user copy of `pulse/default.pa`
 
 To get the default settings for pulseaudio to stop fighting me wrt default
 sinks and volume settings, I made a copy of the `defaults.pa` file
@@ -105,11 +110,11 @@ sinks and volume settings, I made a copy of the `defaults.pa` file
     $ mkdir .config/pulse  # Probably already exists
     $ cp /etc/pulse/default.pa .config/pulse
 
-FIXME Can we modify an existing `defaults.pa` file from the local system? Without ansible?
+And then make these changes `$ diff .config/pulse/default.pa
+/etc/pulse/default.pa`. Note that the `set-default-sink` name at the end is one
+we discovered above with `pactl list sinks...`
 
-And then made these changes `$ diff .config/pulse/default.pa
-/etc/pulse/default.pa`. Note that the `set-default-sink` name is one that we
-discovered above with `pactl`.
+Here's what the diff looked like at the time this README was last edited:
 
     25c25
     < # load-module module-stream-restore
@@ -130,21 +135,45 @@ discovered above with `pactl`.
     146d145
     < set-default-sink alsa_output.pci-0000_01_00.1.hdmi-surround
 
-Commands can then be issued with `pactl` to mute/unmute and set default
+The important part is we're trying to prevent pulseaudio from doing
+`module-stream-restore`, `module-switch-on-port-available` and
+`module-switch-on-connect`.
 
-    $ # values are: 1 (muted) | 0 | toggle
-    $ pactl set-sink-mute alsa_output.pci-0000_01_00.1.hdmi-surround 1
-    $ pactl set-sink-mute alsa_output.pci-0000_01_00.1.hdmi-surround 0
+The final one, `set-default-sink` helps with selecting the correct sink at boot
+time, I believe.
 
-    $ # values are: +N% | -N% | N% (absolute)
-    $ pactl set-sink-volume alsa_output.pci-0000_01_00.1.hdmi-surround 50%
-    $ pactl set-sink-volume alsa_output.pci-0000_01_00.1.hdmi-surround 100%
+#### Configure the `sound-switch.sh` script
 
-    $ pactl set-default-sink "bluez_sink.D0_8A_55_A9_58_12.a2dp_sink"
+Copy the file `root/home/USER/bin/sound-switch.sh` to somewhere on your PATH.
+I often put user-specific scripts like this in `$HOME/bin/` but you'll
+need to make sure that's on your PATH if you do so.
 
-Commands like these can be used in scripts and can be used to respond to udev
-hardware events as well.
+There are several variables at the beginning of `sound-switch.sh` which will
+need to be set to values from the `pactl list sinks` output above.
 
+One of them is the transient bluetooth device, one is the speakers we want to
+use at other times. The third device is one that I never want to make any
+noise. This is likely to be specific to my hardware, but this shows an example
+of it being aggressively muted during all of the script's operations.
+
+#### Test the whole thing
+
+The `pactl list sinks` command above will also show you the mute/unmute status
+of everything and can be used with `watch` to monitor how this is working more
+easily.
+
+Do this in a shell and then connect/disconnect your bluetooth device a few
+times, making a note of the changes.
+
+    $ watch 'pactl list sinks | grep -e "Sink " -e "Name" -e "Mute"'
+
+Or, alternatively,
+
+    $ watch ./bin/list-sinks-brief.sh
+
+I did experience some weirdness after reboot initially due to incorrect
+settings in `defaults.pa`. Reboot your system and test again to be sure
+pulseaudio isn't doing anything funny.
 
 ## Development
 
