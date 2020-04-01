@@ -3,12 +3,13 @@
 
 ## Synopsis
 
-Custom set-up for automatically switching to a bluetooth headphone
+Configuration for automatically switching between speakers and bluetooth
+headphones on Ubuntu or similar distros
 
 
 ## Description
 
-I wanted to configure a system to automatically switch to only the bluetooth
+I wanted to configure a system to automatically use only the bluetooth
 headphones when they connect and to switch back to the normal (HDMI, in this
 case) sound output when the headphones disconnect. The default behavior in
 Ubuntu 18.x's pulseaudio config was not doing this correctly.
@@ -16,13 +17,16 @@ Ubuntu 18.x's pulseaudio config was not doing this correctly.
 The files in this project may be very Ubuntu-, or Debian-specific. I do know I
 don't see the same `default.pa` file on Arch Linux.
 
-This project contains notes, files and scripts that are the result of this
-work.
+My solution for this involves customizations in both udev rules and pulseaudio
+configuration. This project contains notes, files and scripts that are the
+result of this work.
 
 
 ## Installation
 
-There are two parts to this: 1) Creating udev rules to perform actions in response to bluetooth add/remove events for the headphone. 2) Configuring pulse audio for the user and the script for switching audio.
+There are two parts to this: 1) Creating udev rules to perform actions in
+response to bluetooth add/remove events for the headphones. 2) Configuring
+pulse audio for the user and the script for switching audio.
 
 ### 1) Creating udev rules for the bluetooth headphone
 
@@ -48,11 +52,12 @@ You can then use that path to query info about that hardware if needed
     E: TAGS=:systemd:
     E: USEC_INITIALIZED=442328156407
 
-Copy the file in this project in `root/etc/udev/rules.d/99-my-device.rules` to
-your system at `/etc/udev/rules.d/`
+Copy the file in this project `root/etc/udev/rules.d/99-my-device.rules` into
+`/etc/udev/rules.d/`
 
-For `<device>` use the bluetooth device we discovered above. For `<user>` use
-the user who will be logged into X and will be using the sound hardware.
+Now we need to edit the file. For `<device>` use the bluetooth device we
+discovered above. For `<user>` use the user who will be logged into X and will
+be using the sound hardware.
 
 Here's a copy of what's in that file:
 
@@ -62,16 +67,10 @@ Here's a copy of what's in that file:
     ACTION=="remove", ENV{DEVPATH}=="<device>", RUN+="/bin/su <user> -c '/home/<user>/bin/sound-switch.sh speakers'"
     ---
 
-Note: It's usually good to use a high number in the name of this file so other
-rules will get a crack at running first.
-
-There should be no need to restart the udev service but this may be necessary
-after any changes:
+There should be no need to restart the udev service but a rules reload may be
+necessary after any changes:
 
     # udevadm control --reload-rules
-
-I had notes showing `# udevadm trigger` too after the `control --reload-rules`
-but I'm not sure this was useful
 
 Once you have added or made changes to the `.rules` file, test to see if your
 script would be run
@@ -101,7 +100,9 @@ This command is also available in a convenience script in this project
 
 #### Configure pulseaudio
 
-On Ubuntu, the default configuration for pulseaudio was fighting me when devices were connected and programs were being run. To take back control of some of this it was necessary to make a custom user copy of `pulse/default.pa`
+On Ubuntu, the default configuration for pulseaudio was fighting me when
+devices were connected and programs were being run. To take back control of
+some of this it was necessary to make a custom user copy of `pulse/default.pa`
 
 To get the default settings for pulseaudio to stop fighting me wrt default
 sinks and volume settings, I made a copy of the `defaults.pa` file
